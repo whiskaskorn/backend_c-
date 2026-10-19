@@ -1,58 +1,78 @@
 using MangaStore.Api.MangasDTO;
 using FluentValidation;
+using MangaStore.Api.Data;
+using MangaStore.Api.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace MangaStore.Api.MangaEndpoints;
 
 
 public static class MangaEndpoints
 {
-    private static List<MangasPostDTO> mangas  = new List<MangasPostDTO>
-    {
-        new MangasPostDTO(1,"Miura","Berserk",20.00f)
-    };
     public static void MapMangaEndpoints(WebApplication app)
     {
-        app.MapGet("/mangas", () => mangas);
-        app.MapPost("/mangas", (MangasPostDTO manga,IValidator<MangasPostDTO> validator) =>
+        app.MapGet("/mangas", async (MangaContext db) =>
         {
-            if(manga == null)
+            return await db.mangas.Select(m => new MangasGetDTO(m.Id,m.Author,m.Name,m.Price)).ToListAsync();
+        });
+        
+        app.MapPost("/mangas", async (MangasPostDTO dto,IValidator<MangasPostDTO> validator,MangaContext db) =>
+        {
+            if(dto == null)
             {
                 return Results.BadRequest("Нема даних");
             }
 
-            var validationResult = validator.Validate(manga);
+            var validationResult = validator.Validate(dto);
             if (!validationResult.IsValid)
             {
                 return Results.ValidationProblem(validationResult.ToDictionary());
             }
-            mangas.Add(manga);
+
+            var manga = new Manga
+            {
+                Author = dto.Author,
+                Name = dto.Name,
+                Price = dto.Price
+            };
+
+
+            db.mangas.Add(manga);
+            await db.SaveChangesAsync();
             return Results.Created();
         });
-        app.MapPut("/mangas/{id}",(int id,MangasPostDTO manga,IValidator<MangasPostDTO> validator) =>
+        app.MapPut("/mangas/{id}",async (int id,MangasPostDTO dto,IValidator<MangasPostDTO> validator,MangaContext db) =>
         {
-            var index = mangas.FindIndex(x => x.Id == id);
-            if(index == -1)
-            {
-                return Results.StatusCode(404);
-            }
-            var validationResult = validator.Validate(manga);
-            if (!validationResult.IsValid)
-            {
-                return Results.ValidationProblem(validationResult.ToDictionary());
-            }
-            mangas[index] = new MangasPostDTO(manga.Id,manga.Author,manga.Name,manga.Price);
-            return Results.StatusCode(200);
-
-        });
-        app.MapDelete("/mangas/{id}",(int id) =>
-        {
-            var manga = mangas.Find(x => x.Id == id);
+            var manga = await db.mangas.FindAsync(id);
             if(manga == null)
             {
                 return Results.StatusCode(404);
             }
-        mangas.Remove(manga);
-        return Results.StatusCode(200);
+            var validationResult = validator.Validate(dto);
+            if (!validationResult.IsValid)
+            {
+                return Results.ValidationProblem(validationResult.ToDictionary());
+            }
+            
+            manga.Author = dto.Author;
+            manga.Name = dto.Name;
+            manga.Price = dto.Price;
+            await db.SaveChangesAsync();
+
+            return Results.Ok();
+
+        });
+        app.MapDelete("/mangas/{id}", async(int id,MangaContext db) =>
+        {
+            var manga = await db.mangas.FindAsync(id);
+            if(manga == null)
+            {
+                return Results.StatusCode(404);
+            }
+            db.mangas.Remove(manga);
+            await db.SaveChangesAsync();
+
+            return Results.Ok();
         });
     }
 }
